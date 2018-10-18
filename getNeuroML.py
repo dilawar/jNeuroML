@@ -5,6 +5,22 @@ import sys
 import os.path as op
 import subprocess
 
+def _mvn_extra_opts( ):
+    import re
+    proxy = os.getenv( 'http_proxy' ) or os.getenv( 'https_proxy' )
+    if proxy:
+        proxy = re.sub( 'http(s?)://', '', proxy )
+        try:
+            host, port = proxy.split(':')
+            port = port.rstrip('/')
+            mvnOpts = '-DproxyHost=%s -DproxyPort=%s' % (host, port)
+            return mvnOpts
+        except Exception as e:
+            print( "[WARN ] Proxy URL '%s' is not in host:port format." % proxy )
+            print( e )
+            return ''
+    return ''
+
 def main():
     """Main"""
     mode = "update"
@@ -108,7 +124,7 @@ def main():
                 or ("jNeuroML" in repo)
 
             if (repo in java_repos or repo in neuroml2_spec_repo) and runMvnInstall:
-                command = "mvn install"
+                command = "mvn install %s" % _mvn_extra_opts()
                 print("It's a Java repository, so installing using Maven...")
                 info = execute_command_in_dir(command, local_dir)
 
@@ -148,17 +164,30 @@ def execute_command_in_dir(command, directory, exit_on_fail=True):
         directory = os.path.normpath(directory)
     print(">>>  Executing: (%s) in dir: %s" % (command, directory))
     p = subprocess.Popen(command, cwd=directory, shell=True, stdout=subprocess.PIPE)
-    return_str = p.communicate()
 
-    if p.returncode != 0:       
-        print("Error: %s" % p.returncode)          
-        print(return_str[0])
-        if exit_on_fail: 
-            exit(p.returncode)
-    if (sys.version_info > (3, 0)):
-        return return_str[0].decode("utf-8")
-    else:
-        return return_str[0]
+    # some command can take long, print the output onto console regularly.
+    # This is from here https://stackoverflow.com/a/4417735/1805129
+    lines = ""
+    for stdout_line in iter(p.stdout.readline, ""):
+        lines += stdout_line
+        print( stdout_line )
+    p.stdout.close()
+    return_code = p.wait()
+    if return_code:
+        raise subprocess.CalledProcessError(return_code, command)
+    return lines
+
+    #return_str = p.communicate()
+    #returncode = popen.wait()
+    #if returncode != 0:       
+    #    print("Error: %s" % returncode)          
+    #    print(return_str[0])
+    #    if exit_on_fail: 
+    #        exit(p.returncode)
+    #if (sys.version_info > (3, 0)):
+    #    return return_str[0].decode("utf-8")
+    #else:
+    #    return return_str[0]
 
 
 def help_info():
